@@ -115,7 +115,6 @@
       </div>
 
       <div class="toolbar-divider"></div>
-
       <div class="toolbar-group">
         <button 
           class="toolbar-button" 
@@ -148,18 +147,13 @@ import Underline from '@tiptap/extension-underline'
 import Placeholder from '@tiptap/extension-placeholder'
 import localforage from 'localforage'
 localforage.setItem('somekey', 'hello value').then(function (value) {
-    // Do other things once the value has been saved.
     console.log(value);
 }).catch(function(err) {
-    // This code runs if there were any errors
     console.log(err);
 });
 localforage.getItem('somekey').then(function(value) {
-    // This code runs once the value has been loaded
-    // from the offline store.
     console.log(value);
 }).catch(function(err) {
-    // This code runs if there were any errors
     console.log(err);
 });
 console.log('localforage is: ', localforage)
@@ -271,7 +265,6 @@ export default {
     },
     
     saveToStorage() {
-      // Make a copy without the editor instance
       const tabsData = this.tabs.map(tab => ({
         name: tab.name,
         content: tab.content
@@ -307,7 +300,6 @@ export default {
     Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
 }
 
-/* Tabs */
 .tabs-container {
   display: flex;
   border-bottom: 1px solid #e0e0e0;
@@ -414,7 +406,7 @@ export default {
   font-size: 14px;
 }
 
-/* Editor content */
+
 .editor-content {
   flex-grow: 1;
   overflow-y: auto;
@@ -468,7 +460,7 @@ export default {
   margin: 2em 0;
 }
 
-/* Make responsive */
+
 @media (max-width: 640px) {
   .toolbar {
     padding: 4px 8px;

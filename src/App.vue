@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-editor-bg flex flex-col">
+  <div class="min-h-screen bg-editor-bg flex flex-col ">
     <RichTextEditor />
     <!-- <Editor />  -->
   </div>
