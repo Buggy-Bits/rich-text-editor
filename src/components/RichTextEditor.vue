@@ -9,10 +9,14 @@ import TextAlign from '@tiptap/extension-text-align'
 import localforage from 'localforage'
 import Placeholder from '@tiptap/extension-placeholder'
 import CharacterCount from '@tiptap/extension-character-count'
+import Link from '@tiptap/extension-link'
+import Color from '@tiptap/extension-color'
+import TextStyle from '@tiptap/extension-text-style'
 
 const tabs = reactive([])
 const activeTab = ref(null)
 const activeEditor = ref(null)
+
 
 const tabsStorageKey = 'editor-tabs'
 
@@ -23,24 +27,25 @@ onMounted(async () => {
       tabs.push(...savedTabs)
       activeTab.value = savedTabs[0].id
     } else {
-      // Create a default tab if no saved tabs exist
       addTab()
     }
   } catch (error) {
     console.error('Error loading tabs from storage:', error)
-    // Create a default tab as fallback
     addTab()
   }
 })
 
 const addTab = () => {
-  // Save current tab content before creating a new one
   saveCurrentTabContent()
-  
+
   const newTab = {
     id: Date.now(),
     title: `Document ${tabs.length + 1}`,
     content: '',
+    history: {
+      undoStack: [],
+      redoStack: []
+    }
   }
   tabs.push(newTab)
   activeTab.value = newTab.id
@@ -48,9 +53,9 @@ const addTab = () => {
 }
 
 const closeTab = (tabId) => {
-  // Save the content of the current tab before closing
+
   saveCurrentTabContent()
-  
+
   const index = tabs.findIndex(tab => tab.id === tabId)
   if (index === -1) return
 
@@ -72,203 +77,272 @@ const saveCurrentTabContent = () => {
 
 const switchTab = async (tabId) => {
   if (activeTab.value === tabId) return
-  
-  // Save current tab content before switching
+
+  // Save before switching tab
   saveCurrentTabContent()
-  
-  // Destroy current editor instance to avoid memory leaks
   if (activeEditor.value) {
     activeEditor.value.destroy()
     activeEditor.value = null
   }
-
   activeTab.value = tabId
-  
-  // Wait for DOM update before creating new editor
   await nextTick()
   initializeEditor()
-  
-  // Save the updated tabs to storage
+
+  // Save to storage
   saveTabs()
 }
 
 const initializeEditor = () => {
   if (!activeTab.value) return
-  
+
   const currentTab = tabs.find(tab => tab.id === activeTab.value)
   if (!currentTab) return
-  
+
+  // undo /redo
+  if (!currentTab.history) {
+    currentTab.history = {
+      undoStack: [],
+      redoStack: []
+    }
+  }
+
   activeEditor.value = new Editor({
     content: currentTab.content,
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        history: false, 
+      }),
       Underline,
       Strike,
-      Heading.configure({ levels: [1, 2] }),
+      Heading.configure({ levels: [1, 2, 3] }),
       TextAlign.configure({ types: ['paragraph', 'heading'] }),
       Placeholder.configure({ placeholder: 'Start typing...' }),
       CharacterCount,
+      Link.configure({
+        openOnClick: true, // open on click
+        linkOnPaste: true, // auto link on paste
+      }),
+      Color,
+      TextStyle,
     ],
     onUpdate: ({ editor }) => {
-      // On every update, save the content to the current tab
-      currentTab.content = editor.getHTML()
-      saveTabs()
+      const html = editor.getHTML()
+      if (currentTab.content !== html) {
+        currentTab.history.undoStack.push(currentTab.content)
+        currentTab.history.redoStack = [] // Clear redo stack on new changes
+        currentTab.content = html
+        saveTabs()
+      }
     },
   })
 }
 
 const saveTabs = async () => {
   try {
-    // Create a clean copy of the tabs data for storage
     const tabsToSave = tabs.map(tab => ({
       id: tab.id,
       title: tab.title,
       content: tab.content,
+      history: tab.history
     }))
-    
+
     await localforage.setItem(tabsStorageKey, tabsToSave)
   } catch (error) {
     console.error('Error saving tabs:', error)
   }
 }
 
-const changeFontFamily = (event) => {
+
+const handleUndo = () => {
   if (!activeEditor.value) return
-  activeEditor.value.chain().focus().setMark('fontFamily', event.target.value).run()
+
+  const currentTab = tabs.find(tab => tab.id === activeTab.value)
+  if (!currentTab || !currentTab.history || currentTab.history.undoStack.length === 0) return
+
+  const previousContent = currentTab.history.undoStack.pop()
+
+  currentTab.history.redoStack.push(currentTab.content)
+
+  currentTab.content = previousContent
+  activeEditor.value.commands.setContent(previousContent, false)
+
+  saveTabs()
 }
 
-const changeFontSize = (event) => {
+// custom redo function 
+const handleRedo = () => {
   if (!activeEditor.value) return
-  activeEditor.value.chain().focus().setMark('fontSize', event.target.value).run()
+
+  const currentTab = tabs.find(tab => tab.id === activeTab.value)
+  if (!currentTab || !currentTab.history || currentTab.history.redoStack.length === 0) return
+
+  const nextContent = currentTab.history.redoStack.pop()
+
+  currentTab.history.undoStack.push(currentTab.content)
+  currentTab.content = nextContent
+  activeEditor.value.commands.setContent(nextContent, false)
+
+  saveTabs()
 }
 
-const changeTextColor = (event) => {
+const setFontSize = (size) => {
   if (!activeEditor.value) return
-  activeEditor.value.chain().focus().setMark('color', event.target.value).run()
+  activeEditor.value.chain().focus().setFontSize(size).run()
 }
 
-const changeBackgroundColor = (event) => {
+const changeTextColor = (color) => {
   if (!activeEditor.value) return
-  activeEditor.value.chain().focus().setMark('backgroundColor', event.target.value).run()
+  activeEditor.value.chain().focus().setColor(color).run()
 }
 
 const insertLink = () => {
   if (!activeEditor.value) return
+
   const url = prompt('Enter URL:')
   if (url) {
-    activeEditor.value.chain().focus().setLink({ href: url }).run()
+    // Check if URL has protocol, add http:// if missing
+    const formattedUrl = url.match(/^https?:\/\//) ? url : `http://${url}`
+    activeEditor.value.chain().focus().setLink({ href: formattedUrl, target: '_blank' }).run()
   }
 }
 
-// Use watch to handle tab changes
+const removeLink = () => {
+  if (!activeEditor.value) return
+  activeEditor.value.chain().focus().unsetLink().run()
+}
+
+const applyTextStyle = (style) => {
+  if (!activeEditor.value) return
+
+  switch (style) {
+    case 'title':
+      activeEditor.value.chain().focus().setFontSize('28px').setFontWeight('bold').run()
+      break
+    case 'heading1':
+      activeEditor.value.chain().focus().toggleHeading({ level: 1 }).run()
+      break
+    case 'heading2':
+      activeEditor.value.chain().focus().toggleHeading({ level: 2 }).run()
+      break
+    case 'heading3':
+      activeEditor.value.chain().focus().toggleHeading({ level: 3 }).run()
+      break
+    case 'normal':
+      activeEditor.value.chain().focus().setParagraph().setFontSize('16px').setFontWeight('normal').run()
+      break
+  }
+}
+
 watch(activeTab, (newTabId, oldTabId) => {
   if (newTabId && newTabId !== oldTabId) {
-    // When activeTab changes, initialize the editor with the new tab's content
     if (activeEditor.value) {
       // Clean up previous editor instance
       activeEditor.value.destroy()
       activeEditor.value = null
     }
-    
+
     nextTick(() => {
       initializeEditor()
     })
   }
 }, { immediate: true })
 
-// Add window unload handler to save content before page close
 window.addEventListener('beforeunload', () => {
   saveCurrentTabContent()
   saveTabs()
 })
-console.log('localforage:', localforage.getItem(tabsStorageKey))
-
-
 </script>
 
 <template>
   <div class="editor-container">
     <div class="tab-bar">
-      <div v-for="tab in tabs" :key="tab.id" 
-           :class="['tab', { 'active': activeTab === tab.id }]"
-           @click="switchTab(tab.id)">
+      <div v-for="tab in tabs" :key="tab.id" :class="['tab', { 'active': activeTab === tab.id }]"
+        @click="switchTab(tab.id)">
         <input v-model="tab.title" @click.stop @change="saveTabs" />
-        <button @click.stop="closeTab(tab.id)" class="close-tab" 
-                :disabled="tabs.length === 1">
+        <button @click.stop="closeTab(tab.id)" class="close-tab" :disabled="tabs.length === 1">
           &times;
         </button>
       </div>
-      <button class="new-tab" @click="addTab">+</button>
+      <div class="new-tab" @click="addTab">+</div>
     </div>
-
     <div v-if="activeEditor" class="toolbar">
-      <!-- Text Formatting -->
+      <!-- Undo/Redo -->
       <div class="toolbar-group">
-        <button 
-          class="toolbar-button" 
-          @click="activeEditor.chain().focus().undo().run()"
-          title="Undo"
-        >
+        <button class="toolbar-button" @click="handleUndo" title="Undo">
           ↩
         </button>
-        <button 
-          class="toolbar-button" 
-          @click="activeEditor.chain().focus().redo().run()"
-          title="Redo"
-        >
+        <button class="toolbar-button" @click="handleRedo" title="Redo">
           ↪
         </button>
       </div>
-      <button :class="{ 'active': activeEditor.isActive('bold') }" @click="activeEditor.chain().focus().toggleBold().run()">Bold</button>
-      
-      <button :class="{ 'active': activeEditor.isActive('italic') }" @click="activeEditor.chain().focus().toggleItalic().run()">Italic</button>
-      <button :class="{ 'active': activeEditor.isActive('underline') }" @click="activeEditor.chain().focus().toggleUnderline().run()">Underline</button>
-      <button :class="{ 'active': activeEditor.isActive('strike') }" @click="activeEditor.chain().focus().toggleStrike().run()">Strikethrough</button>
+
+      <!-- Text Formatting -->
+      <div class="toolbar-group">
+        <button :class="{ 'active': activeEditor.isActive('bold') }"
+          @click="activeEditor.chain().focus().toggleBold().run()"><strong>B</strong></button>
+        <button @click="activeEditor.chain().focus().toggleCodeBlock().run()"
+          :class="{ 'active': activeEditor.isActive('codeBlock') }">&lt;/&gt;</button>
+        <button :class="{ 'active': activeEditor.isActive('italic') }"
+          @click="activeEditor.chain().focus().toggleItalic().run()"><em>i</em></button>
+        <button :class="{ 'active': activeEditor.isActive('underline') }"
+          @click="activeEditor.chain().focus().toggleUnderline().run()"><u>U</u></button>
+        <button :class="{ 'active': activeEditor.isActive('strike') }"
+          @click="activeEditor.chain().focus().toggleStrike().run()"><del>abc</del></button>
+      </div>
+
+      <!-- Text Style Presets -->
+      <div class="toolbar-group">
+        <select @change="applyTextStyle($event.target.value)">
+          <option value="normal">Normal Text</option>
+          <option value="title">Title</option>
+          <option value="heading1">Heading 1</option>
+          <option value="heading2">Heading 2</option>
+          <option value="heading3">Heading 3</option>
+        </select>
+      </div>
+
+      <!-- Font Size -->
+      <div class="toolbar-group">
+        <select @change="setFontSize($event.target.value)">
+          <option value="12px">12px</option>
+          <option value="14px">14px</option>
+          <option value="16px">16px</option>
+          <option value="18px">18px</option>
+          <option value="20px">20px</option>
+          <option value="24px">24px</option>
+          <option value="28px">28px</option>
+          <option value="32px">32px</option>
+        </select>
+      </div>
 
       <!-- Text Alignment -->
-      <button @click="activeEditor.chain().focus().setTextAlign('left').run()">Left</button>
-      <button @click="activeEditor.chain().focus().setTextAlign('center').run()">Center</button>
-      <button @click="activeEditor.chain().focus().setTextAlign('right').run()">Right</button>
-
-      <!-- Font Size and Family -->
-      <select @change="changeFontFamily($event)">
-        <option value="Arial">Arial</option>
-        <option value="Courier New">Courier New</option>
-        <option value="Georgia">Georgia</option>
-        <option value="Times New Roman">Times New Roman</option>
-        <option value="Verdana">Verdana</option>
-      </select>
-
-      <select @change="changeFontSize($event)">
-        <option value="12px">12px</option>
-        <option value="14px">14px</option>
-        <option value="16px">16px</option>
-        <option value="18px">18px</option>
-        <option value="20px">20px</option>
-      </select>
+      <div class="toolbar-group">
+        <button @click="activeEditor.chain().focus().setTextAlign('left').run()">Left</button>
+        <button @click="activeEditor.chain().focus().setTextAlign('center').run()">Center</button>
+        <button @click="activeEditor.chain().focus().setTextAlign('right').run()">Right</button>
+      </div>
 
       <!-- Text Color -->
-      <input type="color" @input="changeTextColor($event)" />
-
-      <!-- Background Color -->
-      <input type="color" @input="changeBackgroundColor($event)" />
-
-      <!-- Headings -->
-      <select @change="activeEditor.chain().focus().toggleHeading({ level: $event.target.value }).run()">
-        <option value="">Normal</option>
-        <option value="1">Heading 1</option>
-        <option value="2">Heading 2</option>
-      </select>
+      <div class="toolbar-group">
+        <label for="text-color">Text Color:</label>
+        <input id="text-color" type="color" @input="changeTextColor($event.target.value)" />
+      </div>
 
       <!-- Lists -->
-      <button :class="{ 'active': activeEditor.isActive('bulletList') }" @click="activeEditor.chain().focus().toggleBulletList().run()">Bullet List</button>
-      <button :class="{ 'active': activeEditor.isActive('orderedList') }" @click="activeEditor.chain().focus().toggleOrderedList().run()">Ordered List</button>
+      <div class="toolbar-group">
+        <button :class="{ 'active': activeEditor.isActive('bulletList') }"
+          @click="activeEditor.chain().focus().toggleBulletList().run()">Bullet List</button>
+        <button :class="{ 'active': activeEditor.isActive('orderedList') }"
+          @click="activeEditor.chain().focus().toggleOrderedList().run()">Ordered List</button>
+      </div>
 
       <!-- Links -->
-      <button @click="insertLink">Insert Link</button>
+      <div class="toolbar-group">
+        <button @click="insertLink">Insert Link</button>
+        <button @click="removeLink" :disabled="!activeEditor.isActive('link')">Remove Link</button>
+      </div>
     </div>
-
-    <!-- Editor Content -->
+    <!-- Editor -->
     <div class="editor-content">
       <editor-content v-if="activeEditor" :editor="activeEditor" />
     </div>
@@ -276,7 +350,6 @@ console.log('localforage:', localforage.getItem(tabsStorageKey))
 </template>
 
 <style>
-/* Updated styling */
 .editor-container {
   width: 100%;
   height: 100vh;
@@ -285,16 +358,13 @@ console.log('localforage:', localforage.getItem(tabsStorageKey))
   position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  box-sizing: border-box;
+
 }
 
 .tab-bar {
   width: 100%;
   display: flex;
-  background: #331717;
+  background: #484848;
   padding: 4px 4px 0;
 }
 
@@ -302,18 +372,19 @@ console.log('localforage:', localforage.getItem(tabsStorageKey))
   display: flex;
   align-items: center;
   padding: 8px 16px;
-  background: #201c1c;
-  border: 1px solid #fd0c0c;
+  background: #353535;
+  /* border: 1px solid #fd0c0c; */
   border-bottom: none;
-  border-radius: 4px 4px 0 0;
+  border-radius: 12px 12px 0 0;
   margin-right: 4px;
   cursor: pointer;
 }
 
 .tab.active {
-  background: #5f5a5a;
-  border-color: #666;
+  background: #1e1e1e;
+  /* border-color: #666; */
 }
+
 .close-tab {
   padding: 0px;
   background: transparent;
@@ -322,10 +393,12 @@ console.log('localforage:', localforage.getItem(tabsStorageKey))
   cursor: pointer;
   margin-left: 8px;
 }
+
 .close-tab:disabled {
   opacity: 0.3;
   cursor: not-allowed;
 }
+
 .tab input {
   border: none;
   outline: none;
@@ -335,9 +408,13 @@ console.log('localforage:', localforage.getItem(tabsStorageKey))
 }
 
 .new-tab {
-  padding: 0 12px;
-  border: 1px solid #ccc;
-  background: #bc5d5d;
+  /* padding: 6px; */
+  height: 32px;
+  width: 32px;
+  align-items: center;
+  /* border: 1px solid #ccc; */
+  background: #353535;
+  border-radius: 50%;
   cursor: pointer;
 }
 
@@ -345,37 +422,83 @@ console.log('localforage:', localforage.getItem(tabsStorageKey))
   width: 100%;
   display: flex;
   padding: 8px;
-  background: #161313;
-  border-bottom: 1px solid #ddd;
+  background: #363733;
+  /* border-bottom: 1px solid #ddd; */
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
-.toolbar button, .toolbar select, .toolbar input {
-  margin-right: 8px;
+.toolbar-group {
+  display: flex;
+  margin-right: 10px;
+  align-items: center;
+}
+
+.toolbar button,
+.toolbar select,
+.toolbar input {
+  margin-right: 4px;
   padding: 4px 8px;
 }
 
 .toolbar button.active {
   background: #e0e0e0;
+  color: #000;
 }
 
 .editor-content {
   flex: 1;
-  /* padding: 16px; */
-  /* overflow-y: auto; */
+  overflow-y: scroll;
+  overflow-x: hidden;
+
+  /* min-height: 100%; */
 }
 
 .ProseMirror {
-  /* min-height: 100%; */
-  width: 100vw;
-  height: 100vh;
-  outline: none;
-  background-color: #201c1c;
+  width: 100%;
+  height: 89vh;
+
+  background-color: #121212;
   color: #fff;
-  padding: 1.6rem 2.8rem;  
+  padding: 1.6rem 2.8rem;
   outline: none;
 }
 
 .ProseMirror:focus {
   outline: none;
+}
+
+.ProseMirror a {
+  color: #4a9df6;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ProseMirror p {
+  margin: 0.5em 0;
+}
+
+/* Apply styling to headings */
+.ProseMirror h1 {
+  font-size: 24px;
+  margin: 1em 0 0.5em;
+}
+
+.ProseMirror h2 {
+  font-size: 20px;
+  margin: 0.8em 0 0.4em;
+}
+
+.ProseMirror h3 {
+  font-size: 18px;
+  margin: 0.6em 0 0.3em;
+}
+
+.codeBlock {
+  background: #2d2d2d;
+  color: #f8f8f2;
+  padding: 1em;
+  border-radius: 4px;
+  overflow-x: auto;
 }
 </style>
