@@ -1,265 +1,265 @@
 <script setup>
-import { ref, reactive, onMounted, watch, nextTick } from 'vue'
-import { Editor, EditorContent } from '@tiptap/vue-3'
-import StarterKit from '@tiptap/starter-kit'
-import Underline from '@tiptap/extension-underline'
-import Strike from '@tiptap/extension-strike'
-import Heading from '@tiptap/extension-heading'
-import TextAlign from '@tiptap/extension-text-align'
-import localforage from 'localforage'
-import Placeholder from '@tiptap/extension-placeholder'
-import CharacterCount from '@tiptap/extension-character-count'
-import Link from '@tiptap/extension-link'
-import Color from '@tiptap/extension-color'
-import TextStyle from '@tiptap/extension-text-style'
+import { ref, reactive, onMounted, watch, nextTick } from "vue";
+import { Editor, EditorContent } from "@tiptap/vue-3";
+import StarterKit from "@tiptap/starter-kit";
+import Underline from "@tiptap/extension-underline";
+import Strike from "@tiptap/extension-strike";
+import Heading from "@tiptap/extension-heading";
+import TextAlign from "@tiptap/extension-text-align";
+import localforage from "localforage";
+import Placeholder from "@tiptap/extension-placeholder";
+import CharacterCount from "@tiptap/extension-character-count";
+import Link from "@tiptap/extension-link";
+import Color from "@tiptap/extension-color";
+import TextStyle from "@tiptap/extension-text-style";
 
-const tabs = reactive([])
-const activeTab = ref(null)
-const activeEditor = ref(null)
-
-
-const tabsStorageKey = 'editor-tabs'
-
+const tabs = ref([]);
+const activeTab = ref(null);
+const activeEditor = ref(null);
+const tabsStorageKey = "editor-tabs";
+console.log("tabsStorageKey", localforage.getItem(tabsStorageKey)); //just for debug bro
 onMounted(async () => {
   try {
-    const savedTabs = await localforage.getItem(tabsStorageKey)
+    let savedTabs = await localforage.getItem(tabsStorageKey);
     if (savedTabs && savedTabs.length) {
-      tabs.push(...savedTabs)
-      activeTab.value = savedTabs[0].id
+      // Safely parse and load saved tabs
+      savedTabs = savedTabs.map((tab) => ({
+        ...tab,
+        history: JSON.parse(tab.history), // Parse history if it's stored as a JSON string
+      }));
+      tabs.value.push(...savedTabs);
+      activeTab.value = savedTabs[0].id;
     } else {
-      addTab()
+      addTab(); // Add a new tab if nothing is saved
     }
   } catch (error) {
-    console.error('Error loading tabs from storage:', error)
-    addTab()
+    console.error("Error loading tabs from storage:", error);
+    addTab();
   }
-})
-
+});
 const addTab = () => {
-  saveCurrentTabContent()
+  saveCurrentTabContent();
 
   const newTab = {
     id: Date.now(),
-    title: `Document ${tabs.length + 1}`,
-    content: '',
+    title: `Document ${tabs.value.length + 1}`,
+    content: "",
     history: {
       undoStack: [],
-      redoStack: []
-    }
-  }
-  tabs.push(newTab)
-  activeTab.value = newTab.id
-  saveTabs()
-}
-
+      redoStack: [],
+    },
+  };
+  tabs.value.push(newTab);
+  activeTab.value = newTab.id;
+  saveTabs();
+};
 const closeTab = (tabId) => {
+  saveCurrentTabContent();
 
-  saveCurrentTabContent()
-
-  const index = tabs.findIndex(tab => tab.id === tabId)
-  if (index === -1) return
-
-  tabs.splice(index, 1)
-  if (activeTab.value === tabId) {
-    activeTab.value = tabs.length ? tabs[Math.max(0, index - 1)].id : null
+  const index = tabs.value.findIndex((tab) => tab.id === tabId);
+  if (index !== -1) {
+    tabs.value.splice(index, 1);
+    if (activeTab.value === tabId) {
+      activeTab.value = tabs.value.length
+        ? tabs.value[Math.max(0, index - 1)].id
+        : null;
+    }
+    saveTabs(); // save tabs and data after removing any tab
   }
-  saveTabs()
-}
-
+};
 const saveCurrentTabContent = () => {
   if (activeEditor.value && activeTab.value) {
-    const currentTab = tabs.find(tab => tab.id === activeTab.value)
+    const currentTab = tabs.value.find((tab) => tab.id === activeTab.value);
     if (currentTab) {
-      currentTab.content = activeEditor.value.getHTML()
+      currentTab.content = activeEditor.value.getHTML(); // Save the content to the tab object
     }
   }
-}
-
+};
 const switchTab = async (tabId) => {
-  if (activeTab.value === tabId) return
-
-  // Save before switching tab
-  saveCurrentTabContent()
-  if (activeEditor.value) {
-    activeEditor.value.destroy()
-    activeEditor.value = null
-  }
-  activeTab.value = tabId
-  await nextTick()
-  initializeEditor()
-
-  // Save to storage
-  saveTabs()
-}
-
-const initializeEditor = () => {
-  if (!activeTab.value) return
-
-  const currentTab = tabs.find(tab => tab.id === activeTab.value)
-  if (!currentTab) return
-
-  // undo /redo
-  if (!currentTab.history) {
-    currentTab.history = {
-      undoStack: [],
-      redoStack: []
+  if (activeTab.value !== tabId) {
+    saveCurrentTabContent(); // Save the current tab content
+    if (activeEditor.value) {
+      activeEditor.value.destroy(); // Destroy the previous editor instance
+      activeEditor.value = null;
     }
+    activeTab.value = tabId; // Set the active tab
+    await nextTick(); // Wait for the DOM to update
+    initializeEditor(); // Initialize the editor for the new tab
+    saveTabs(); // Save tabs after switching
   }
-
-  activeEditor.value = new Editor({
-    content: currentTab.content,
-    extensions: [
-      StarterKit.configure({
-        history: false, 
-      }),
-      Underline,
-      Strike,
-      Heading.configure({ levels: [1, 2, 3] }),
-      TextAlign.configure({ types: ['paragraph', 'heading'] }),
-      Placeholder.configure({ placeholder: 'Start typing...' }),
-      CharacterCount,
-      Link.configure({
-        openOnClick: true, // open on click
-        linkOnPaste: true, // auto link on paste
-      }),
-      Color,
-      TextStyle,
-    ],
-    onUpdate: ({ editor }) => {
-      const html = editor.getHTML()
-      if (currentTab.content !== html) {
-        currentTab.history.undoStack.push(currentTab.content)
-        currentTab.history.redoStack = [] // Clear redo stack on new changes
-        currentTab.content = html
-        saveTabs()
-      }
-    },
-  })
-}
+};
+const initializeEditor = () => {
+  const currentTab = tabs.value.find((tab) => tab.id === activeTab.value);
+  if (currentTab && !activeEditor.value) {
+    if (!currentTab.history) {
+      currentTab.history = { undoStack: [], redoStack: [] };
+    }
+    activeEditor.value = new Editor({
+      content: currentTab.content,
+      extensions: [
+        StarterKit.configure({ history: false }),
+        Underline,
+        Strike,
+        Heading.configure({ levels: [1, 2, 3] }),
+        TextAlign.configure({ types: ["paragraph", "heading"] }),
+        Placeholder.configure({ placeholder: "Start typing..." }),
+        CharacterCount,
+        Link.configure({ openOnClick: true, linkOnPaste: true }),
+        Color,
+        TextStyle,
+      ],
+      onUpdate({ editor }) {
+        const htmlContent = editor.getHTML();
+        if (currentTab.content !== htmlContent) {
+          currentTab.history.undoStack.push(currentTab.content);
+          currentTab.history.redoStack = [];
+          currentTab.content = htmlContent;
+          saveTabs(); // Save after content changes
+        }
+      },
+    });
+  }
+};
 
 const saveTabs = async () => {
   try {
-    const tabsToSave = tabs.map(tab => ({
+    const tabsToSave = tabs.value.map((tab) => ({
       id: tab.id,
       title: tab.title,
       content: tab.content,
-      history: tab.history
-    }))
-
-    await localforage.setItem(tabsStorageKey, tabsToSave)
+      history: JSON.stringify(tab.history), // Convert history object to a string
+    }));
+    await localforage.setItem(tabsStorageKey, tabsToSave);
   } catch (error) {
-    console.error('Error saving tabs:', error)
+    console.error("Error saving tabs:", error);
   }
-}
-
-
+};
 const handleUndo = () => {
-  if (!activeEditor.value) return
-
-  const currentTab = tabs.find(tab => tab.id === activeTab.value)
-  if (!currentTab || !currentTab.history || currentTab.history.undoStack.length === 0) return
-
-  const previousContent = currentTab.history.undoStack.pop()
-
-  currentTab.history.redoStack.push(currentTab.content)
-
-  currentTab.content = previousContent
-  activeEditor.value.commands.setContent(previousContent, false)
-
-  saveTabs()
-}
-
-// custom redo function 
+  const currentTab = tabs.value.find((tab) => tab.id === activeTab.value);
+  if (
+    currentTab &&
+    currentTab.history &&
+    currentTab.history.undoStack.length > 0
+  ) {
+    const lastContent = currentTab.history.undoStack.pop();
+    currentTab.history.redoStack.push(currentTab.content);
+    currentTab.content = lastContent;
+    activeEditor.value.commands.setContent(lastContent, false);
+    saveTabs(); // Save after undo
+  }
+};
+// custom redo function
 const handleRedo = () => {
-  if (!activeEditor.value) return
+  const currentTab = tabs.value.find((tab) => tab.id === activeTab.value);
+  if (
+    currentTab &&
+    currentTab.history &&
+    currentTab.history.redoStack.length > 0
+  ) {
+    const lastContent = currentTab.history.redoStack.pop();
+    currentTab.history.undoStack.push(currentTab.content);
+    currentTab.content = lastContent;
+    activeEditor.value.commands.setContent(lastContent, false);
+    saveTabs(); // Save after redo
+  }
+};
+watch(
+  activeTab,
+  (newTabId, oldTabId) => {
+    if (newTabId && newTabId !== oldTabId) {
+      if (activeEditor.value) {
+        activeEditor.value.destroy();
+        activeEditor.value = null;
+      }
+      nextTick(() => {
+        initializeEditor();
+      });
+    }
+  },
+  { immediate: true }
+);
 
-  const currentTab = tabs.find(tab => tab.id === activeTab.value)
-  if (!currentTab || !currentTab.history || currentTab.history.redoStack.length === 0) return
-
-  const nextContent = currentTab.history.redoStack.pop()
-
-  currentTab.history.undoStack.push(currentTab.content)
-  currentTab.content = nextContent
-  activeEditor.value.commands.setContent(nextContent, false)
-
-  saveTabs()
-}
+// Save tabs when the user is about to unload the page
+window.addEventListener("beforeunload", () => {
+  saveCurrentTabContent();
+  saveTabs();
+});
 
 const setFontSize = (size) => {
-  if (!activeEditor.value) return
-  activeEditor.value.chain().focus().setFontSize(size).run()
-}
-
+  if (!activeEditor.value) return;
+  activeEditor.value.chain().focus().setFontSize(size).run();
+};
 const changeTextColor = (color) => {
-  if (!activeEditor.value) return
-  activeEditor.value.chain().focus().setColor(color).run()
-}
-
+  if (!activeEditor.value) return;
+  activeEditor.value.chain().focus().setColor(color).run();
+};
 const insertLink = () => {
-  if (!activeEditor.value) return
+  if (!activeEditor.value) return;
 
-  const url = prompt('Enter URL:')
+  const url = prompt("Enter URL:");
   if (url) {
     // Check if URL has protocol, add http:// if missing
-    const formattedUrl = url.match(/^https?:\/\//) ? url : `http://${url}`
-    activeEditor.value.chain().focus().setLink({ href: formattedUrl, target: '_blank' }).run()
+    const formattedUrl = url.match(/^https?:\/\//) ? url : `http://${url}`;
+    activeEditor.value
+      .chain()
+      .focus()
+      .setLink({ href: formattedUrl, target: "_blank" })
+      .run();
   }
-}
-
+};
 const removeLink = () => {
-  if (!activeEditor.value) return
-  activeEditor.value.chain().focus().unsetLink().run()
-}
-
+  if (!activeEditor.value) return;
+  activeEditor.value.chain().focus().unsetLink().run();
+};
 const applyTextStyle = (style) => {
-  if (!activeEditor.value) return
+  if (!activeEditor.value) return;
 
   switch (style) {
-    case 'title':
-      activeEditor.value.chain().focus().setFontSize('28px').setFontWeight('bold').run()
-      break
-    case 'heading1':
-      activeEditor.value.chain().focus().toggleHeading({ level: 1 }).run()
-      break
-    case 'heading2':
-      activeEditor.value.chain().focus().toggleHeading({ level: 2 }).run()
-      break
-    case 'heading3':
-      activeEditor.value.chain().focus().toggleHeading({ level: 3 }).run()
-      break
-    case 'normal':
-      activeEditor.value.chain().focus().setParagraph().setFontSize('16px').setFontWeight('normal').run()
-      break
+    case "title":
+      activeEditor.value
+        .chain()
+        .focus()
+        .setFontSize("28px")
+        .setFontWeight("bold")
+        .run();
+      break;
+    case "heading1":
+      activeEditor.value.chain().focus().toggleHeading({ level: 1 }).run();
+      break;
+    case "heading2":
+      activeEditor.value.chain().focus().toggleHeading({ level: 2 }).run();
+      break;
+    case "heading3":
+      activeEditor.value.chain().focus().toggleHeading({ level: 3 }).run();
+      break;
+    case "normal":
+      activeEditor.value
+        .chain()
+        .focus()
+        .setParagraph()
+        .setFontSize("16px")
+        .setFontWeight("normal")
+        .run();
+      break;
   }
-}
-
-watch(activeTab, (newTabId, oldTabId) => {
-  if (newTabId && newTabId !== oldTabId) {
-    if (activeEditor.value) {
-      // Clean up previous editor instance
-      activeEditor.value.destroy()
-      activeEditor.value = null
-    }
-
-    nextTick(() => {
-      initializeEditor()
-    })
-  }
-}, { immediate: true })
-
-window.addEventListener('beforeunload', () => {
-  saveCurrentTabContent()
-  saveTabs()
-})
+};
 </script>
 
 <template>
   <div class="editor-container">
     <div class="tab-bar">
-      <div v-for="tab in tabs" :key="tab.id" :class="['tab', { 'active': activeTab === tab.id }]"
-        @click="switchTab(tab.id)">
+      <div
+        v-for="tab in tabs"
+        :key="tab.id"
+        :class="['tab', { active: activeTab === tab.id }]"
+        @click="switchTab(tab.id)"
+      >
         <input v-model="tab.title" @click.stop @change="saveTabs" />
-        <button @click.stop="closeTab(tab.id)" class="close-tab" :disabled="tabs.length === 1">
+        <button
+          @click.stop="closeTab(tab.id)"
+          class="close-tab"
+          :disabled="tabs.length === 1"
+        >
           &times;
         </button>
       </div>
@@ -278,16 +278,36 @@ window.addEventListener('beforeunload', () => {
 
       <!-- Text Formatting -->
       <div class="toolbar-group">
-        <button :class="{ 'active': activeEditor.isActive('bold') }"
-          @click="activeEditor.chain().focus().toggleBold().run()"><strong>B</strong></button>
-        <button @click="activeEditor.chain().focus().toggleCodeBlock().run()"
-          :class="{ 'active': activeEditor.isActive('codeBlock') }">&lt;/&gt;</button>
-        <button :class="{ 'active': activeEditor.isActive('italic') }"
-          @click="activeEditor.chain().focus().toggleItalic().run()"><em>i</em></button>
-        <button :class="{ 'active': activeEditor.isActive('underline') }"
-          @click="activeEditor.chain().focus().toggleUnderline().run()"><u>U</u></button>
-        <button :class="{ 'active': activeEditor.isActive('strike') }"
-          @click="activeEditor.chain().focus().toggleStrike().run()"><del>abc</del></button>
+        <button
+          :class="{ active: activeEditor.isActive('bold') }"
+          @click="activeEditor.chain().focus().toggleBold().run()"
+        >
+          <strong>B</strong>
+        </button>
+        <button
+          @click="activeEditor.chain().focus().toggleCodeBlock().run()"
+          :class="{ active: activeEditor.isActive('codeBlock') }"
+        >
+          &lt;/&gt;
+        </button>
+        <button
+          :class="{ active: activeEditor.isActive('italic') }"
+          @click="activeEditor.chain().focus().toggleItalic().run()"
+        >
+          <em>i</em>
+        </button>
+        <button
+          :class="{ active: activeEditor.isActive('underline') }"
+          @click="activeEditor.chain().focus().toggleUnderline().run()"
+        >
+          <u>U</u>
+        </button>
+        <button
+          :class="{ active: activeEditor.isActive('strike') }"
+          @click="activeEditor.chain().focus().toggleStrike().run()"
+        >
+          <del>abc</del>
+        </button>
       </div>
 
       <!-- Text Style Presets -->
@@ -317,29 +337,55 @@ window.addEventListener('beforeunload', () => {
 
       <!-- Text Alignment -->
       <div class="toolbar-group">
-        <button @click="activeEditor.chain().focus().setTextAlign('left').run()">Left</button>
-        <button @click="activeEditor.chain().focus().setTextAlign('center').run()">Center</button>
-        <button @click="activeEditor.chain().focus().setTextAlign('right').run()">Right</button>
+        <button
+          @click="activeEditor.chain().focus().setTextAlign('left').run()"
+        >
+          Left
+        </button>
+        <button
+          @click="activeEditor.chain().focus().setTextAlign('center').run()"
+        >
+          Center
+        </button>
+        <button
+          @click="activeEditor.chain().focus().setTextAlign('right').run()"
+        >
+          Right
+        </button>
       </div>
 
       <!-- Text Color -->
       <div class="toolbar-group">
         <label for="text-color">Text Color:</label>
-        <input id="text-color" type="color" @input="changeTextColor($event.target.value)" />
+        <input
+          id="text-color"
+          type="color"
+          @input="changeTextColor($event.target.value)"
+        />
       </div>
 
       <!-- Lists -->
       <div class="toolbar-group">
-        <button :class="{ 'active': activeEditor.isActive('bulletList') }"
-          @click="activeEditor.chain().focus().toggleBulletList().run()">Bullet List</button>
-        <button :class="{ 'active': activeEditor.isActive('orderedList') }"
-          @click="activeEditor.chain().focus().toggleOrderedList().run()">Ordered List</button>
+        <button
+          :class="{ active: activeEditor.isActive('bulletList') }"
+          @click="activeEditor.chain().focus().toggleBulletList().run()"
+        >
+          Bullet List
+        </button>
+        <button
+          :class="{ active: activeEditor.isActive('orderedList') }"
+          @click="activeEditor.chain().focus().toggleOrderedList().run()"
+        >
+          Ordered List
+        </button>
       </div>
 
       <!-- Links -->
       <div class="toolbar-group">
         <button @click="insertLink">Insert Link</button>
-        <button @click="removeLink" :disabled="!activeEditor.isActive('link')">Remove Link</button>
+        <button @click="removeLink" :disabled="!activeEditor.isActive('link')">
+          Remove Link
+        </button>
       </div>
     </div>
     <!-- Editor -->
@@ -358,7 +404,6 @@ window.addEventListener('beforeunload', () => {
   position: fixed;
   top: 0;
   left: 0;
-
 }
 
 .tab-bar {
