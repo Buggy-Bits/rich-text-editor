@@ -429,7 +429,14 @@ onBeforeUnmount(() => {
   width: 100%;
   display: flex;
   background: #484848;
-  padding: 4px 4px 0;
+  padding: 4px 16em 0px 4px;
+  overflow-x: scroll;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+}
+
+.tab-bar::-webkit-scrollbar {
+  display: none; 
 }
 
 .tab {
@@ -467,18 +474,17 @@ onBeforeUnmount(() => {
   border: none;
   outline: none;
   background: transparent;
-  margin-right: 8px;
+  margin-right: 24px;
+  width: 5rem;
   color: #fff;
 }
 
 .new-tab {
-  /* padding: 6px; */
   height: 32px;
   width: 32px;
-  align-items: center;
-  /* border: 1px solid #ccc; */
   background: #353535;
-  border-radius: 50%;
+  border-radius: 16px;
+  margin: auto 24px;
   cursor: pointer;
 }
 
