@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onMounted, watch, nextTick } from "vue";
+import { ref, reactive, onMounted, watch, nextTick, onBeforeUnmount } from "vue";
 import { Editor, EditorContent } from "@tiptap/vue-3";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -243,6 +243,25 @@ const applyTextStyle = (style) => {
       break;
   }
 };
+
+const handleKeyboardShortcuts = (event) => {
+  if (event.metaKey || event.ctrlKey) {  // Check if Cmd (Mac) or Ctrl (Windows) is pressed
+    if (event.key === 'z' || event.key === 'Z') { // Undo (Ctrl+Z / Cmd+Z)
+      event.preventDefault();  // Prevent default browser action
+      handleUndo();
+    }
+  }
+};
+// add event listener for keyboard shortcut
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyboardShortcuts);
+});
+
+// remove up event listener
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyboardShortcuts);
+});
+
 </script>
 
 <template>
