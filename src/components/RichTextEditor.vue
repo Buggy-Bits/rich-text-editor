@@ -284,7 +284,8 @@ onBeforeUnmount(() => {
       </div>
       <div class="new-tab" @click="addTab">+</div>
     </div>
-    <div v-if="activeEditor" class="toolbar">
+    <div class="toolbar-wrapper">
+      <div v-if="activeEditor" class="toolbar">
       <!-- Undo/Redo -->
       <div class="toolbar-group">
         <button class="toolbar-button" @click="handleUndo" title="Undo">
@@ -375,7 +376,7 @@ onBeforeUnmount(() => {
 
       <!-- Text Color -->
       <div class="toolbar-group">
-        <label for="text-color">Text Color:</label>
+        
         <input
           id="text-color"
           type="color"
@@ -406,6 +407,7 @@ onBeforeUnmount(() => {
           Remove Link
         </button>
       </div>
+    </div>
     </div>
     <!-- Editor -->
     <div class="editor-content">
@@ -498,6 +500,10 @@ onBeforeUnmount(() => {
   gap: 4px;
 }
 
+.toolbar-wrapper{
+  margin:0 auto;
+}
+
 .toolbar-group {
   display: flex;
   margin-right: 10px;
@@ -506,7 +512,10 @@ onBeforeUnmount(() => {
 
 .toolbar button,
 .toolbar select,
-.toolbar input {
+.toolbar input[type="color"] {
+  height: 30px; 
+  border: 1px solid #ccc; 
+  cursor: pointer; 
   margin-right: 4px;
   padding: 4px 8px;
 }
