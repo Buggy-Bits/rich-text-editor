@@ -2,6 +2,10 @@
 
 A personal rich text editor built with Vue.js and TipTap to manage temperory notes, todo lists, and important links in a dark-themed interface.
 
+## Screenshot
+
+![Screenshot](public/preview.png)
+
 ## Project Overview
 This is a personal project I developed to help manage my notes and tasks while learning software development. As a college student spending significant time on my laptop, I needed a centralized place to store todos, important links, and notes for my courses.
 
